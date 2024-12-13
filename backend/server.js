@@ -1,14 +1,23 @@
 const express = require('express');
 const AWS = require('aws-sdk');
-const bodyParser = require('body-parser');
-const app = express();
-const cors=require('cors')
+const fileUpload = require('express-fileupload');
+const cors = require('cors');
 require('dotenv').config();
 
-// Middleware to parse JSON and handle large files
-app.use(bodyParser.json({ limit: '10mb' })); // Adjust limit as needed
-app.use(cors());
-// Configure AWS S3
+const app = express();
+
+// CORS options
+const corsOptions = {
+  origin: ['http://localhost:3000'],
+  methods: ['GET', 'POST'], // Allow both GET and POST methods
+  allowedHeaders: ['Content-Type'], // Allowed headers for the requests
+};
+app.use(cors(corsOptions));
+
+// Middleware to handle file uploads (no need to use fileUpload for this scenario)
+app.use(fileUpload());
+
+// AWS S3 Configuration
 const s3 = new AWS.S3({
     accessKeyId: process.env.AWS_ACCESS_KEY,
     secretAccessKey: process.env.AWS_SECRET_KEY,
@@ -17,27 +26,23 @@ const s3 = new AWS.S3({
 
 // Upload endpoint
 app.post('/upload', async (req, res) => {
-    const { fileName, fileType, fileContent } = req.body;
-
-    if (!fileName || !fileType || !fileContent) {
-        return res.status(400).send({ error: 'Missing required fields.' });
+    if (!req.files || !req.files.image) {
+        return res.status(400).send({ error: 'No file uploaded.' });
     }
 
-    // Decode base64 content
-    const buffer = Buffer.from(fileContent, 'base64');
+    const file = req.files.image;
 
-    // Upload parameters
+    // Upload to S3
     const params = {
-        Bucket: process.env.S3_BUCKET_NAME,
-        Key: `${Date.now()}_${fileName}`,
-        Body: buffer,
-        ContentType: fileType,
-        ACL: 'public-read', // Optional: Make the file publicly accessible
+      Bucket: process.env.S3_BUCKET_NAME,
+      Key: `${Date.now()}_${file.name}`,
+      Body: file.data,
+      ContentType: file.mimetype,
     };
 
     try {
-        const data = await s3.upload(params).promise();
-        res.send({ imageUrl: data.Location });
+        const uploadResult = await s3.upload(params).promise();
+        res.send({ imageUrl: uploadResult.Location });
     } catch (error) {
         console.error('Error uploading to S3:', error);
         res.status(500).send({ error: 'Failed to upload image.' });
@@ -45,5 +50,5 @@ app.post('/upload', async (req, res) => {
 });
 
 // Start server
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
